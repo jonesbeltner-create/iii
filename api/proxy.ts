@@ -66,6 +66,9 @@ export default async function proxyHandler(
       responseEncoding: 'utf8',
       timeout: 8000,
       maxRedirects: 5,
+      // A remote site's own 404/403 page is still useful document content for
+      // the viewer, so handle it below instead of turning it into a proxy 404.
+      validateStatus: () => true,
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -82,7 +85,10 @@ export default async function proxyHandler(
       delete sanitizedHeaders[header];
     }
 
-    res.statusCode = upstream.status;
+    // Always return a document response to the client. This keeps an
+    // upstream site's status page inside the iframe rather than making the
+    // dashboard mistake it for a failed /api/proxy route.
+    res.statusCode = 200;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     for (const [name, value] of Object.entries(sanitizedHeaders)) {
