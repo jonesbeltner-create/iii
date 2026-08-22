@@ -87,14 +87,29 @@ export default async function proxyHandler(
       },
     };
 
-    let upstream = await axios.get<string>(targetUrl.toString(), requestOptions);
+    const targetCandidates = [
+      targetUrl.toString(),
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl.toString())}`,
+      `https://corsproxy.io/?url=${encodeURIComponent(targetUrl.toString())}`,
+    ];
+    let upstream: Awaited<ReturnType<typeof axios.get<string>>> | undefined;
 
-    // Some sites block datacenter IPs even when the request has browser
-    // headers. Retry those responses through a second server-side relay.
-    if (upstream.status >= 400) {
-      const fallbackUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl.toString())}`;
-      upstream = await axios.get<string>(fallbackUrl, requestOptions);
+    // Try the destination first, then two independent server-side relays.
+    // This handles sites that block datacenter IPs without making the client
+    // know which transport was needed.
+    for (const candidate of targetCandidates) {
+      try {
+        const response = await axios.get<string>(candidate, requestOptions);
+        if (response.status < 400) {
+          upstream = response;
+          break;
+        }
+      } catch {
+        // Continue to the next relay; the final catch returns the styled error.
+      }
     }
+
+    if (!upstream) throw new Error('All proxy transports failed');
 
     // Copy only safe upstream metadata. In particular, remove the policies
     // that would prevent the returned document from being rendered in our
