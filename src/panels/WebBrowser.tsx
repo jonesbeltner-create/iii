@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, RotateCw, Globe, ShieldAlert, Loader2 } from 'lucide-react';
-import { normalizeUrl } from '@/lib/url';
 import { proxyUrl } from '@/data';
 
 interface WebBrowserProps {
@@ -59,12 +58,20 @@ export default function WebBrowser({ url, onNavigate }: WebBrowserProps) {
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    const next = normalizeUrl(draft);
-    if (!next) return;
-    if (next === url) {
+
+    const trimmedInput = draft.trim();
+    if (!trimmedInput) return;
+
+    // The proxy always receives an absolute URL so its query parser can
+    // safely resolve the requested destination.
+    const absoluteUrl = /^https?:\/\//i.test(trimmedInput)
+      ? trimmedInput
+      : `https://${trimmedInput}`;
+
+    if (absoluteUrl === url) {
       setReloadKey((key) => key + 1);
     } else {
-      onNavigate(next);
+      onNavigate(absoluteUrl);
     }
   };
 
