@@ -92,6 +92,7 @@ export default async function proxyHandler(
       `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl.toString())}`,
       `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl.toString())}`,
       `https://corsproxy.io/?url=${encodeURIComponent(targetUrl.toString())}`,
+      `https://r.jina.ai/http://${targetUrl.toString().replace(/^https?:\/\//i, '')}`, 
     ];
     let upstream: Awaited<ReturnType<typeof axios.get<string>>> | undefined;
 
