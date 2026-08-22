@@ -115,10 +115,14 @@ export default async function proxyHandler(
     }
     sendMarkup(res, upstream.data);
   } catch {
-    // A blocked, unavailable, or timed-out upstream should not take down the
-    // API process. Return a clean server error instead of a misleading 404.
-    res.statusCode = 500;
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    sendMarkup(res, 'Unable to load the requested page.');
+    // Convert upstream failures into a document response rather than letting
+    // an Axios exception crash the local server or leak a raw stack trace.
+    const errorResponse = new Response(
+      '<!doctype html><html><body style="font-family:system-ui;padding:2rem;color:#b91c1c"><h2>Unable to load this page</h2><p>The requested site did not respond or blocked the proxy connection.</p></body></html>',
+      { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+    );
+    res.statusCode = errorResponse.status;
+    res.setHeader('Content-Type', errorResponse.headers.get('Content-Type') ?? 'text/html');
+    sendMarkup(res, await errorResponse.text());
   }
 }

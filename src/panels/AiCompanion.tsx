@@ -33,6 +33,7 @@ export default function AiCompanion() {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
+  const [apiKey, setApiKey] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -46,26 +47,15 @@ export default function AiCompanion() {
       { role: 'user' as const, content: userText },
     ];
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch('/api/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${import.meta.env.VITE_OPENROUTER_API_KEY ?? ''}`,
-      },
-      body: JSON.stringify({
-        model: 'meta-llama/llama-3-8b-instruct:free',
-        messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...apiMessages],
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey, messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...apiMessages] }),
     });
 
-    if (!response.ok) {
-      throw new Error(`AI service returned ${response.status}`);
-    }
-
-    const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    return data.choices?.[0]?.message?.content?.trim() || 'I did not get a response. Could you try again?';
+    const data = (await response.json()) as { content?: string };
+    if (!response.ok) throw new Error(`AI service returned ${response.status}`);
+    return data.content?.trim() || 'I did not get a response. Could you try again?';
   }
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -99,6 +89,14 @@ export default function AiCompanion() {
       <div className="mb-4">
         <h1 className="text-2xl font-bold text-white sm:text-3xl">AI Companion</h1>
         <p className="mt-1.5 text-slate-400">Powered by the OpenRouter free model pool — ask me anything.</p>
+        <input
+          type="password"
+          value={apiKey}
+          onChange={(event) => setApiKey(event.target.value)}
+          placeholder="Optional OpenRouter API key (mock mode without one)"
+          className="mt-3 w-full max-w-md rounded-lg border border-slate-700/60 bg-surface-pane px-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+          autoComplete="off"
+        />
       </div>
 
       <div
