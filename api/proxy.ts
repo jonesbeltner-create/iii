@@ -3,6 +3,18 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 const BLOCKED_RESPONSE_HEADERS = ['x-frame-options', 'content-security-policy'];
 
+type ProxyResponse = ServerResponse & {
+  send?: (body: string) => void;
+};
+
+function sendMarkup(res: ProxyResponse, markup: string): void {
+  if (typeof res.send === 'function') {
+    res.send(markup);
+  } else {
+    res.end(markup);
+  }
+}
+
 /**
  * Resolve the game's npm archive to its GitHub Pages file layout. The
  * jsDelivr package name contains the release version, which must not become
@@ -37,7 +49,7 @@ function rewriteJsDelivrTarget(target: string): string {
 
 export default async function proxyHandler(
   req: IncomingMessage,
-  res: ServerResponse,
+  res: ProxyResponse,
 ): Promise<void> {
   const requestUrl = new URL(req.url ?? '/', 'http://localhost');
   const target = requestUrl.searchParams.get('url');
@@ -61,13 +73,11 @@ export default async function proxyHandler(
   }
 
   try {
-    const upstream = await axios.get<string>(targetUrl.toString(), {
-      responseType: 'text',
-      responseEncoding: 'utf8',
+    const requestOptions = {
+      responseType: 'text' as const,
+      responseEncoding: 'utf8' as const,
       timeout: 8000,
       maxRedirects: 5,
-      // A remote site's own 404/403 page is still useful document content for
-      // the viewer, so handle it below instead of turning it into a proxy 404.
       validateStatus: () => true,
       headers: {
         'User-Agent':
@@ -75,7 +85,16 @@ export default async function proxyHandler(
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
       },
-    });
+    };
+
+    let upstream = await axios.get<string>(targetUrl.toString(), requestOptions);
+
+    // Some sites block datacenter IPs even when the request has browser
+    // headers. Retry those responses through a second server-side relay.
+    if (upstream.status >= 400) {
+      const fallbackUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl.toString())}`;
+      upstream = await axios.get<string>(fallbackUrl, requestOptions);
+    }
 
     // Copy only safe upstream metadata. In particular, remove the policies
     // that would prevent the returned document from being rendered in our
@@ -85,9 +104,8 @@ export default async function proxyHandler(
       delete sanitizedHeaders[header];
     }
 
-    // Always return a document response to the client. This keeps an
-    // upstream site's status page inside the iframe rather than making the
-    // dashboard mistake it for a failed /api/proxy route.
+    // Always return a document response to the client. If the upstream did
+    // not provide a content type, explicitly make it an HTML document.
     res.statusCode = 200;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
@@ -95,12 +113,12 @@ export default async function proxyHandler(
       if (name === 'content-type' || name === 'content-length' || BLOCKED_RESPONSE_HEADERS.includes(name)) continue;
       if (typeof value === 'string') res.setHeader(name, value);
     }
-    res.end(upstream.data);
+    sendMarkup(res, upstream.data);
   } catch {
     // A blocked, unavailable, or timed-out upstream should not take down the
-    // API process. Return a stable text response for the iframe instead.
-    res.statusCode = 404;
+    // API process. Return a clean server error instead of a misleading 404.
+    res.statusCode = 500;
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.end('404 Not Found');
+    sendMarkup(res, 'Unable to load the requested page.');
   }
 }
