@@ -34,6 +34,9 @@ export default function WebBrowser({ url, onNavigate }: WebBrowserProps) {
 
     fetch(proxied, { signal: controller.signal })
       .then((response) => {
+        if (response.status === 500) {
+          throw new Error('Proxy unavailable (500). All upstream transports failed.');
+        }
         if (!response.ok) throw new Error(`Page returned ${response.status}`);
         return response.text();
       })
@@ -124,7 +127,14 @@ export default function WebBrowser({ url, onNavigate }: WebBrowserProps) {
             />
             {error && (
               <div className="absolute inset-x-4 top-4 rounded-lg border border-red-400/40 bg-slate-900/95 px-4 py-3 text-sm text-red-200">
-                Unable to load this page: {error}
+                <p>Unable to load this page: {error}</p>
+                <button
+                  type="button"
+                  onClick={() => setReloadKey((key) => key + 1)}
+                  className="mt-2 rounded-md bg-red-400/20 px-2.5 py-1 text-xs font-semibold text-red-100 hover:bg-red-400/30"
+                >
+                  Retry proxy
+                </button>
               </div>
             )}
           </>
