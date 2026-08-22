@@ -12,7 +12,19 @@ function rewriteJsDelivrTarget(target: string): string {
   const gameArchive = target.match(
     /^https?:\/\/cdn\.jsdelivr\.net\/npm\/gn-math\.github\.io-main@[^/]+(\/.*)?$/i,
   );
-  if (gameArchive) return `https://github.io${gameArchive[1] ?? '/'}`;
+  if (gameArchive) {
+    const packagePath = gameArchive[1] ?? '/';
+
+    // The npm package is a release bundle assembled from these two public
+    // repositories. github.io is not a valid raw asset host, so point each
+    // package subdirectory at the repository that actually owns its files.
+    if (packagePath === '/zones.json') {
+      return 'https://raw.githubusercontent.com/gn-math/assets/main/zones.json';
+    }
+    if (packagePath.startsWith('/html-main/')) {
+      return `https://raw.githubusercontent.com/gn-math/html/main/${packagePath.slice('/html-main/'.length)}`;
+    }
+  }
 
   const githubAsset = target.match(
     /^https?:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^/@]+)@[^/]+(?:\/(.*))?$/i,
