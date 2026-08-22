@@ -3,6 +3,17 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 const BLOCKED_RESPONSE_HEADERS = ['x-frame-options', 'content-security-policy'];
 
+/** Convert GitHub-backed jsDelivr URLs to GitHub's raw asset host. */
+function rewriteJsDelivrTarget(target: string): string {
+  const match = target.match(
+    /^https?:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^/@]+)@[^/]+(?:\/(.*))?$/i,
+  );
+  if (!match) return target;
+
+  const [, owner, repository, filePath] = match;
+  return `https://raw.githubusercontent.com/${owner}/${repository}/${filePath ?? ''}`;
+}
+
 export default async function proxyHandler(
   req: IncomingMessage,
   res: ServerResponse,
@@ -19,7 +30,7 @@ export default async function proxyHandler(
 
   let targetUrl: URL;
   try {
-    targetUrl = new URL(target);
+    targetUrl = new URL(rewriteJsDelivrTarget(target));
     if (!['http:', 'https:'].includes(targetUrl.protocol)) throw new Error('Unsupported protocol');
   } catch {
     res.statusCode = 400;
@@ -32,10 +43,13 @@ export default async function proxyHandler(
     const upstream = await axios.get<string>(targetUrl.toString(), {
       responseType: 'text',
       responseEncoding: 'utf8',
+      timeout: 8000,
       maxRedirects: 5,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; NexusHub/1.0)',
-        Accept: 'text/html,application/xhtml+xml',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
       },
     });
 
@@ -55,10 +69,11 @@ export default async function proxyHandler(
       if (typeof value === 'string') res.setHeader(name, value);
     }
     res.end(upstream.data);
-  } catch (error) {
-    const status = axios.isAxiosError(error) && error.response?.status ? error.response.status : 502;
-    res.statusCode = status;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: 'Unable to retrieve the requested page' }));
+  } catch {
+    // A blocked, unavailable, or timed-out upstream should not take down the
+    // API process. Return a stable text response for the iframe instead.
+    res.statusCode = 404;
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.end('404 Not Found');
   }
 }
