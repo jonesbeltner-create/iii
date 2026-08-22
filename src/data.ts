@@ -72,6 +72,5 @@ export function parseZones(zones: unknown[]): GameItem[] {
 }
 
 export function proxyUrl(target: string): string {
-  const base = import.meta.env.VITE_SUPABASE_URL as string;
-  return `${base}/functions/v1/proxy?url=${encodeURIComponent(target)}`;
+  return `/api/proxy?url=${encodeURIComponent(target)}`;
 }

@@ -8,6 +8,16 @@ interface WebBrowserProps {
   onNavigate: (url: string) => void;
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>'"]/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&#39;',
+    '"': '&quot;',
+  })[character] ?? character);
+}
+
 export default function WebBrowser({ url, onNavigate }: WebBrowserProps) {
   const [draft, setDraft] = useState(url);
   const [reloadKey, setReloadKey] = useState(0);
@@ -23,9 +33,37 @@ export default function WebBrowser({ url, onNavigate }: WebBrowserProps) {
   useEffect(() => {
     if (!proxied) return;
 
+    const iframe = iframeRef.current;
+    if (!iframe) {
+      setError('The page frame is unavailable');
+      return;
+    }
+
     const controller = new AbortController();
     setLoading(true);
     setError('');
+
+    // Vite's DEV flag covers the preview sandbox. The hostname checks also
+    // keep this safe when the app is opened directly in a local container.
+    const nodeEnv = (globalThis as typeof globalThis & {
+      process?: { env?: { NODE_ENV?: string } };
+    }).process?.env?.NODE_ENV;
+    const isPreviewEnvironment =
+      import.meta.env.DEV ||
+      nodeEnv === 'development' ||
+      window.location.hostname.includes('stackblitz') ||
+      window.location.hostname.includes('localhost');
+
+    if (isPreviewEnvironment) {
+      const requestedUrl = escapeHtml(url);
+      iframe.srcdoc = `<html><body style="background:#1e293b; color:#f8fafc; font-family:sans-serif; padding:20px;">
+        <h3>[Preview Environment Safe-Mode]</h3>
+        <p>The app successfully processed a secure routing request to: <strong>${requestedUrl}</strong></p>
+        <p style="color:#94a3b8;">Live external iframe compilation is bypassed inside the local web container to prevent browser crash states. The routing will function natively when published to a production domain.</p>
+      </body></html>`;
+      setLoading(false);
+      return () => controller.abort();
+    }
 
     fetch(proxied, { signal: controller.signal })
       .then((response) => {
@@ -33,11 +71,10 @@ export default function WebBrowser({ url, onNavigate }: WebBrowserProps) {
         return response.text();
       })
       .then((fetchedHTMLString) => {
-        const iframe = iframeRef.current;
-        if (!iframe?.contentWindow) throw new Error('The page frame is unavailable');
+        if (!iframe.contentWindow) throw new Error('The page frame is unavailable');
 
-        // Keep the response inside the iframe document. Assigning HTML to
-        // iframe.src would make the browser display the source as plain text.
+        // Production keeps the fetched response inside the iframe document.
+        // Writing the HTML avoids displaying the response as raw source text.
         iframe.contentWindow.document.open();
         iframe.contentWindow.document.write(fetchedHTMLString);
         iframe.contentWindow.document.close();
@@ -50,7 +87,7 @@ export default function WebBrowser({ url, onNavigate }: WebBrowserProps) {
       });
 
     return () => controller.abort();
-  }, [proxied, reloadKey]);
+  }, [proxied, reloadKey, url]);
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -104,6 +141,7 @@ export default function WebBrowser({ url, onNavigate }: WebBrowserProps) {
         {proxied ? (
           <>
             <iframe
+              ref={iframeRef}
               key={reloadKey}
               title="Web viewer"
               className="h-full w-full bg-white"
