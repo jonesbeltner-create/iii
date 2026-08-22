@@ -3,14 +3,23 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 const BLOCKED_RESPONSE_HEADERS = ['x-frame-options', 'content-security-policy'];
 
-/** Convert GitHub-backed jsDelivr URLs to GitHub's raw asset host. */
+/**
+ * Resolve the game's npm archive to its GitHub Pages file layout. The
+ * jsDelivr package name contains the release version, which must not become
+ * part of the GitHub Pages path.
+ */
 function rewriteJsDelivrTarget(target: string): string {
-  const match = target.match(
+  const gameArchive = target.match(
+    /^https?:\/\/cdn\.jsdelivr\.net\/npm\/gn-math\.github\.io-main@[^/]+(\/.*)?$/i,
+  );
+  if (gameArchive) return `https://github.io${gameArchive[1] ?? '/'}`;
+
+  const githubAsset = target.match(
     /^https?:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^/@]+)@[^/]+(?:\/(.*))?$/i,
   );
-  if (!match) return target;
+  if (!githubAsset) return target;
 
-  const [, owner, repository, filePath] = match;
+  const [, owner, repository, filePath] = githubAsset;
   return `https://raw.githubusercontent.com/${owner}/${repository}/${filePath ?? ''}`;
 }
 
